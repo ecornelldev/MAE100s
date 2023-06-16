@@ -1,4 +1,4 @@
-function plotKF(mu,sigma,pose,map,measFunc, varargin)
+function plotKF(mu,sigma,pose,map, varargin)
 
 if size(pose,1)==2
     pose(3,:) = 0;
@@ -19,7 +19,7 @@ for i = 1:length(map)
     hold on;
 end
 
-if nargin > 5
+if nargin > 4
     beacons = varargin{1};
     plot(beacons(:,1),beacons(:,2),'.m','markersize',20)
 end
@@ -52,7 +52,7 @@ data.h2 = h2;
 data.mu = mu;
 data.sigma = sigma;
 data.pose = pose;
-title("EKF: " + func2str(measFunc)); 
+%title("EKF: " + func2str(measFunc)); 
 
 b2 = uicontrol('Parent',f,'Units','normal','Position',[253/540,510/540,50/540,30/540],...
               'String','Run KF');
