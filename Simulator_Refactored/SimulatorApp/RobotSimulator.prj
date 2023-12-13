@@ -1,58 +1,27 @@
 <deployment-project plugin="plugin.toolbox" plugin-version="1.0">
-  <configuration build-checksum="274759659" file="/Users/gisner001329/Desktop/existingSim/MAE100s/Simulator_Refactored/Robot Simulator.prj" location="/Users/gisner001329/Desktop/existingSim/MAE100s/Simulator_Refactored" name="Robot Simulator" target="target.toolbox" target-name="Package Toolbox">
-    <param.appname>CreateRobotSimulator</param.appname>
+  <configuration file="C:\Users\rramanat\OneDrive - MathWorks\Desktop\SimFIles\RobotSimulator.prj" location="C:\Users\rramanat\OneDrive - MathWorks\Desktop\SimFIles" name="RobotSimulator" target="target.toolbox" target-name="Package Toolbox">
+    <param.appname>RobotSimulator</param.appname>
     <param.authnamewatermark />
     <param.email />
     <param.company />
     <param.summary />
-    <param.description>Latest refactored sim 12/9</param.description>
+    <param.description />
     <param.screenshot />
-    <param.version>4.5</param.version>
-    <param.output>${PROJECT_ROOT}/CreateRobotSimulator.mltbx</param.output>
+    <param.version>1.0</param.version>
+    <param.output>${PROJECT_ROOT}\RobotSimulator.mltbx</param.output>
     <param.products.name />
     <param.products.id />
     <param.products.version />
     <param.platforms />
-    <param.guid>3279d515-3ff9-4036-a75d-ee4c6f3d2d48</param.guid>
-    <param.exclude.filters>% List files contained in your toolbox folder that you would like to exclude
-% from packaging.  Excludes should be listed relative to the toolbox folder.
-% Some examples of how to specify excludes are provided below:
-%
-% A single file in the toolbox folder:
-% .svn
-%
-% A single file in a subfolder of the toolbox folder:
-% example/.svn
-%
-% All files in a subfolder of the toolbox folder:
-% example/*
-%
-% All files of a certain name in all subfolders of the toolbox folder:
-% **/.svn
-%
-% All files matching a pattern in all subfolders of the toolbox folder:
-% **/*.bak
-%
-.DS_Store
-.MATLABDriveTag
-DesktopToolset.xml
-resources
-Resources</param.exclude.filters>
+    <param.guid>9b6f2f28-2216-4248-9225-dbbdd901b42f</param.guid>
+    <param.exclude.filters />
     <param.exclude.pcodedmfiles>true</param.exclude.pcodedmfiles>
     <param.examples />
     <param.demosxml />
     <param.apps>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator/App Launchers/ConfigMaker.mlappinstall</file>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator/App Launchers/MapMaker.mlappinstall</file>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator/App Launchers/Replay.mlappinstall</file>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator/App Launchers/Simulator.mlappinstall</file>
+      <file>${PROJECT_ROOT}\toolboxfolder\Simulator.mlappinstall</file>
     </param.apps>
-    <param.registered.apps>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator/Apps/ConfigMakerGUI_App.mlapp</file>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator/Apps/MapMakerGUI_App.mlapp</file>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator/Apps/ReplayGUI_App.mlapp</file>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator/Apps/Simulator.mlapp</file>
-    </param.registered.apps>
+    <param.registered.apps />
     <param.docs />
     <param.getting.started.guide />
     <param.matlabpath.excludes />
@@ -79,15 +48,19 @@ Resources</param.exclude.filters>
       <param.email />
       <param.company />
       <param.summary />
+      <param.description />
       <param.screenshot />
+      <param.version />
       <param.output />
       <param.products.name />
       <param.products.id />
       <param.products.version />
       <param.platforms />
+      <param.exclude.filters />
       <param.exclude.pcodedmfiles />
       <param.examples />
       <param.demosxml />
+      <param.registered.apps />
       <param.docs />
       <param.getting.started.guide />
       <param.matlabpath.excludes />
@@ -111,28 +84,24 @@ Resources</param.exclude.filters>
       <param.additional.sw.linux.url />
     </unset>
     <fileset.rootdir>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator</file>
+      <file>${PROJECT_ROOT}\toolboxfolder</file>
     </fileset.rootdir>
     <fileset.rootfiles>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator/App Launchers</file>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator/Apps</file>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator/Functions</file>
-      <file>${PROJECT_ROOT}/CreateRobotSimulator/doc</file>
+      <file>${PROJECT_ROOT}\toolboxfolder\CreateRobot.m</file>
+      <file>${PROJECT_ROOT}\toolboxfolder\Simulator.mlappinstall</file>
     </fileset.rootfiles>
     <fileset.depfun.included />
     <fileset.depfun.excluded />
     <fileset.package />
     <build-deliverables>
-      <file location="${PROJECT_ROOT}" name="CreateRobotSimulator.mltbx" optional="false">/Users/gisner001329/Desktop/existingSim/MAE100s/Simulator_Refactored/CreateRobotSimulator.mltbx</file>
+      <file location="${PROJECT_ROOT}" name="RobotSimulator.mltbx" optional="false">C:\Users\rramanat\OneDrive - MathWorks\Desktop\SimFIles\RobotSimulator.mltbx</file>
     </build-deliverables>
     <workflow />
     <matlab>
-      <root>/Applications/MATLAB_R2020b.app</root>
+      <root>C:\Program Files\MATLAB\R2023b</root>
       <toolboxes>
         <toolbox name="matlabcoder" />
-        <toolbox name="embeddedcoder" />
-        <toolbox name="fixedpoint" />
-        <toolbox name="matlabhdlcoder" />
+        <toolbox name="gpucoder" />
         <toolbox name="neuralnetwork" />
       </toolboxes>
       <toolbox>
@@ -141,19 +110,9 @@ Resources</param.exclude.filters>
         </matlabcoder>
       </toolbox>
       <toolbox>
-        <embeddedcoder>
+        <gpucoder>
           <enabled>true</enabled>
-        </embeddedcoder>
-      </toolbox>
-      <toolbox>
-        <fixedpoint>
-          <enabled>true</enabled>
-        </fixedpoint>
-      </toolbox>
-      <toolbox>
-        <matlabhdlcoder>
-          <enabled>true</enabled>
-        </matlabhdlcoder>
+        </gpucoder>
       </toolbox>
       <toolbox>
         <neuralnetwork>
@@ -162,18 +121,18 @@ Resources</param.exclude.filters>
       </toolbox>
     </matlab>
     <platform>
-      <unix>true</unix>
-      <mac>true</mac>
-      <windows>false</windows>
+      <unix>false</unix>
+      <mac>false</mac>
+      <windows>true</windows>
       <win2k>false</win2k>
       <winxp>false</winxp>
       <vista>false</vista>
       <linux>false</linux>
       <solaris>false</solaris>
-      <osver>10.14.6</osver>
+      <osver>10.0</osver>
       <os32>false</os32>
       <os64>true</os64>
-      <arch>maci64</arch>
+      <arch>win64</arch>
       <matlab>true</matlab>
     </platform>
   </configuration>

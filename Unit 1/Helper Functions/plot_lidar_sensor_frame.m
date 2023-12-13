@@ -1,4 +1,4 @@
-function plot_lidar_xy_sensor(maxRange, angleData,distLidar, depthXY, lidar)
+function plot_lidar_sensor_frame(maxRange, angleData,distLidar, depthXY, lidar)
 figure; 
 hold on; %This keeps what has already been plotted if new plots are called
 plot(0,0, 'bo'); %Plot sensor pose in sensor frame
