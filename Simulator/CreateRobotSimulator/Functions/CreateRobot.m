@@ -83,16 +83,6 @@ classdef CreateRobot < handle
                     %   format information on the contents of the structure
         mapStart;   % Contains robot start position/orientation information
                     % Format: vector of doubles, [x y th]
-        mapWalls;   % Contains obstacle (wall) start and end points
-                    % Format: matrix of doubles, columns [x1 y1 x2 y2]
-        mapLines;   % Contains line start and endpoints
-                    % Format: matrix of doubles, columns [x1 y1 x2 y2]
-        mapBeacs;   % Containing beacon location, color, and ID information
-                    % Format: cell array of doubles, 
-                    %   columns {x y red green blue ID}
-        mapVWalls;  % Contains virtual wall location, direction, and 
-                    %   strength information
-                    % Format: matrix of doubles, columns [x y th strength]
     end
     
     methods(Static, Access= 'public')
@@ -119,6 +109,81 @@ classdef CreateRobot < handle
                 oldAng= oldAng-2*pi;
             end
             newAng= oldAng;
+        end
+
+        function mapStruct = loadMap(mapFileName)
+        % load a map files and parse it to generate map matrices [walls,
+        % lines, beacs, and vwalls
+        % Input: 
+        % mapFileName: name of the map file.  assumes the map file
+        % follows the formatting prescribed by MapMakerGUI
+        %
+        % output: map is struct with fields walls, lines, beacs, and vwalls
+        % walls: matrix of the wall data, each row of walls captures the
+        % endpoints [x1 y1 x2 y2]
+        % lines: matrix of the line data, each row lines captures the
+        % endpoints [x1 y1 x2 y2]
+        % beacs: cell array of beacon data, each row of beacons capture the
+        % following [x y r g b 'beaconID']
+        % vwalls: matrix of virtual wall data, each row of beacs captures
+        % the following [x y theta range]
+
+            % read the map file and put each line into a cell array
+            map = readcell(mapFileName,'Delimiter','none','CommentStyle','%');
+            % standarize text to lower case
+            map = lower(strtrim(map));
+            
+            %initialize map data structures
+            walls = [];
+            lines = [];
+            beacs = {};
+            vwalls = [];
+        
+            %parse the file
+            for shp = 1:size(map,1)
+                % split each line at the delimiters (' ', '[', ']') and
+                % remove any empty strings from the this process
+                lineWords = rmmissing(split(map(shp),{' ','[',']'}));
+                % switch statement that looks at the first word of
+                % lineWords which specifies the feature type. The switch
+                % block determines the features type, checks whether the
+                % line is written correctly and writes the line data to the
+                % appropriate matrix. Improperly formatted lines are
+                % skipped and no error is thrown.
+                switch lineWords{1}
+                    case 'wall'
+                        if length(lineWords) == 5
+                            walls= [walls ; str2double(lineWords{2}) ...
+                        str2double(lineWords{3}) str2double(lineWords{4}) ...
+                        str2double(lineWords{5})];
+                        end
+                    case 'line'
+                        if length(lineWords) == 5
+                             lines= [lines ; str2double(lineWords{2}) ...
+                        str2double(lineWords{3}) str2double(lineWords{4}) ...
+                        str2double(lineWords{5})];
+                        end
+                    case 'beacon'
+                        if length(lineWords) == 7
+                            beacs= [beacs ; str2double(lineWords{2}) ...
+                                str2double(lineWords{3}) ...
+                                str2double(lineWords{4}) ...
+                                str2double(lineWords{5}) ...
+                                str2double(lineWords{6}) lineWords(7)];
+                        end
+                    case 'virtwall'
+                        if length(lineWords) == 5
+                            vwalls= [vwalls ; str2double(lineWords{2}) ...
+                                str2double(lineWords{3}) str2double(lineWords{4}) ...
+                                str2double(lineWords{5})];
+                        end
+                end
+            end
+            mapStruct.walls = walls;
+            mapStruct.lines = lines;
+            mapStruct.beacs = beacs;
+            mapStruct.vwalls = vwalls;
+
         end
     end
     
@@ -154,10 +219,6 @@ classdef CreateRobot < handle
             
             % Assign properties
             obj.mapStart= [0 0 0];  % Default start position at origin
-            obj.mapWalls= [];
-            obj.mapLines= [];
-            obj.mapBeacs= {};
-            obj.mapVWalls= [];
             obj.timeElap= [];
             obj.dataHist= {};
             obj.noise= struct;      % Empty structure to store noise data
@@ -172,9 +233,98 @@ classdef CreateRobot < handle
             obj.odomDist= 0;        % Start odometry at zero
             obj.odomAng= 0;
         end
+
+    %function to plot the scene, which is a plot showing all of the map
+    %obstacles and also the pose of the robot
+        function plotScene(obj,map)
+            % extract the relevant variables from the map struct
+            walls = map.walls;
+            lines = map.lines;
+            beacs = map.beacs;
+            vwalls = map.vwalls;
+
+            %set up the plot
+            f = figure();
+            hold on            
+            % Plot walls
+            for i= 1:size(walls,1)
+                plot(walls(i,[1 3]),walls(i,[2 4]),'k-','LineWidth',1)
+            end
+        
+            % Plot lines
+            for i= 1:size(lines,1)
+                plot(lines(i,[1 3]),lines(i,[2 4]),'k--','LineWidth',1)
+            end
+        
+            % Plot beacons
+            for i= 1:size(beacs,1)
+                plot(beacs{i,1},beacs{i,2},...
+                    'Color',cell2mat(beacs(i,3:5)),'Marker','o')
+                text(beacs{i,1},beacs{i,2},['  ' beacs{i,6}])
+            end
+        
+            % Plot virtual walls
+            % Define virtual wall emitter constants
+            halo_rad= 0.45;     % Radius of the halo around the emitter
+            range_short= 2.13;  % Range of the wall on the 0-3' setting
+            ang_short= 0.33;    % Angular range on the 0-3' setting
+            range_med= 5.56;    % Range of the wall on the 4'-7' setting
+            ang_med= 0.49;      % Angular range on the 4'-7' setting
+            range_long= 8.08;   % Range of the wall on the 8'+ setting
+            ang_long= 0.61;     % Angular range on the 8'+ setting
+        
+            % Get points to map virtual walls
+            for i= 1:size(vwalls,1)
+                x_vw= vwalls(i,1);
+                y_vw= vwalls(i,2);
+                th_vw= vwalls(i,3);
+                if vwalls(i,4) == 1
+                    range_vw= range_short;
+                    ang_vw= ang_short;
+                elseif vwalls(i,4) == 2
+                    range_vw= range_med;
+                    ang_vw= ang_med;
+                else
+                    range_vw= range_long;
+                    ang_vw= ang_long;
+                end
+                x_1= x_vw+range_vw*cos(th_vw+ang_vw/2);
+                y_1= y_vw+range_vw*sin(th_vw+ang_vw/2);
+                x_2= x_vw+range_vw*cos(th_vw-ang_vw/2);
+                y_2= y_vw+range_vw*sin(th_vw-ang_vw/2);
+        
+                % Plot halo around emitter and range triangle
+                circ_numPts= 21;    % Estimate circle as circ_numPts-1 lines
+                circ_ang=linspace(0,2*pi,circ_numPts);
+                circ_rad=ones(1,circ_numPts)*halo_rad;
+                [circ_x, circ_y]= pol2cart(circ_ang,circ_rad);
+                circ_x= circ_x+x_vw;
+                circ_y= circ_y+y_vw;
+                plot(x_vw,y_vw,'g*')
+                plot(circ_x,circ_y,'g:','LineWidth',1);
+                plot([x_vw x_1 x_2 x_vw],[y_vw y_1 y_2 y_vw],'g:','LineWidth',1)
+            end
+
+            %plot the robot
+            [x, y, th] = genOverhead(obj);
+
+            % Line approximation of the robot
+            circ_numPts= 21;    % Estimate circle as circ_numPts-1 lines
+            circ_ang=linspace(0,2*pi,circ_numPts);
+            circ_rad=ones(1,circ_numPts)*obj.radius;
+            [circ_x, circ_y]= pol2cart(circ_ang,circ_rad);
+            circ_x=circ_x+x;
+            circ_y=circ_y+y;
+            
+            plot(circ_x,circ_y,'b-','LineWidth',1.5);
+            plot([x x+1.5*obj.radius*cos(th)],[y y+1.5*obj.radius*sin(th)],'b-','LineWidth',1.5)
+            xlim([-5 5])
+            ylim([-5 5])
+            hold off
+        end
         
     % SimulatorGUI Control Functions
-        function [rad rIR rSon rLid angRLid numPtsLid rRSDepth angRSDepth nRSDepth]= getConstants(obj)
+        function [rad, rIR, rSon, rLid, angRLid, numPtsLid, rRSDepth, angRSDepth, nRSDepth]= getConstants(obj)
         % [rad rIR rSon rLid angRLid numPtsLid rRSDepth angRSDepth] = getConstants(obj)
         % Output constant properties of the robot for simulator usage
         %
@@ -200,48 +350,6 @@ classdef CreateRobot < handle
             rRSDepth= obj.rangeRSDepth;
             angRSDepth= obj.angRangeRSDepth;
             nRSDepth = obj.rsdepth_n_pts;
-        end
-        
-        function [start walls lines beacs vwalls]= getMap(obj)
-        % [start walls lines beacs vwalls] = getMap(obj)
-        % Output the obstacle and robot map data for plotting
-        %
-        % Input:
-        % obj - Instance of class CreateRobot
-        %
-        % Output:
-        % start - Vector containing robot start position information
-        % walls - Matrix containing obstacle information
-        % lines - Matrix containing line information
-        % beacs - Cell array containing beacon information
-        % vwalls - Matrix containing virtual wall information
-        %   See the properties specification for format information
-            
-            % Assign variables from object values
-            start= obj.mapStart;
-            walls= obj.mapWalls;
-            lines= obj.mapLines;
-            beacs= obj.mapBeacs;
-            vwalls= obj.mapVWalls;
-        end
-        
-        function setMap(obj,walls,lines,beacs,vwalls)
-        % setMap(obj,walls,lines,beacs,vwalls)
-        % Change the obstacle map data in the robot object
-        %
-        % Input:
-        % obj - Instance of class CreateRobot
-        % walls - % Matrix containing obstacle information
-        % lines - % Matrix containing line information
-        % beacs - % Cell array containing beacon information
-        % vwalls - % Matrix containing virtual wall information
-        %   See properties specification for format information
-            
-            % Save map information to object
-            obj.mapWalls= walls;
-            obj.mapLines= lines;
-            obj.mapBeacs= beacs;
-            obj.mapVWalls= vwalls;
         end
         
         function setMapStart(obj,origin)
@@ -351,7 +459,7 @@ classdef CreateRobot < handle
             end
         end
         
-        function updateSensorVisualization(obj,handlesGUI,handles_sensors)
+        function updateSensorVisualization(obj,handlesGUI,handles_sensors,map)
         % updateSensorVisualization(obj,handlesGUI,handles_sensors)
         % Updates the data used to plot the sensors visual representation
         %
@@ -361,6 +469,9 @@ classdef CreateRobot < handle
         % handles_sensors - Vector of doubles, handles to all sensor
         %   visualization plots;
         %   order specified by creation in SimulatorGUI_OpeningFcn
+        % map - struct of map data from loadMap
+
+            walls = map.walls;
             
             % Wall sensor
             if get(handlesGUI.chkbx_wall,'Value')
@@ -371,7 +482,7 @@ classdef CreateRobot < handle
                 sensAngDir= -0.5*pi;    % Sensor looks to the right
                 
                 % Find if wall is detected
-                wall= genIR(obj);
+                wall= genIR(obj,walls);
                 if wall     % Plot full range if wall is detected
                     set(handles_sensors(1),'XData',[x_sensor x_sensor+...
                         obj.rangeIR*cos(obj.thAbs+sensAngDir)])
@@ -385,7 +496,7 @@ classdef CreateRobot < handle
 
             % Sonar sensors
             if get(handlesGUI.chkbx_sonar,'Value')
-                distSonar= genSonar(obj);
+                distSonar= genSonar(obj,walls);
                 for i= 1:4
                     th_sensor= obj.thAbs+(i-1)*pi/2;
                     x_sensor= obj.posAbs(1)+obj.radius*cos(th_sensor);
@@ -399,7 +510,7 @@ classdef CreateRobot < handle
 
             % Bump sensors
             if get(handlesGUI.chkbx_bump,'Value')
-                bump= genBump(obj);
+                bump= genBump(obj,walls);
                 x_robot= obj.posAbs(1);
                 y_robot= obj.posAbs(2);
                 th_robot= obj.thAbs;
@@ -440,7 +551,7 @@ classdef CreateRobot < handle
 
             % Cliff sensors
             if get(handlesGUI.chkbx_cliff,'Value')
-                cliff= genCliff(obj);
+                cliff= genCliff(obj,lines);
                 x_robot= obj.posAbs(1);
                 y_robot= obj.posAbs(2);
                 th_robot= obj.thAbs;
@@ -518,7 +629,7 @@ classdef CreateRobot < handle
                 for i= 0:4
                     th_sensor= obj.thAbs+obj.angRangeLidar*(i-2)/4;
                     dist= findDist(obj,x_sensor,y_sensor,obj.rangeLidar,...
-                        th_sensor)+noiseAvg+noiseStDev*randn;
+                        th_sensor,walls)+noiseAvg+noiseStDev*randn;
                     set(handles_sensors(13+i),'XData',...
                         [x_sensor x_sensor+dist*cos(th_sensor)])
                     set(handles_sensors(13+i),'YData',...
@@ -567,7 +678,7 @@ classdef CreateRobot < handle
                     th_sensor= obj.thAbs + th_offset;
                     
                     dist= findDist(obj,x_sensor,y_sensor,obj.rangeRSDepth,...
-                        th_sensor)+noiseAvg+noiseStDev*randn;
+                        th_sensor,walls)+noiseAvg+noiseStDev*randn;
                     x_meas = x_sensor + dist * cos(th_sensor);
                     y_meas = y_sensor + dist * sin(th_sensor);
                     
@@ -698,18 +809,21 @@ classdef CreateRobot < handle
         end
         
     % Sensor Functions
-        function bump= genBump(obj)
-        % bump = genBump(obj)
+        function bump= genBump(obj,map)
+        % bump = genBump(obj,map)
         % Generates a reading for all bump sensors
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % bump - Vector of Boolean doubles [right front left],
         %   1 indicates the sensor is activated, 0 is not activated
             
+            % extract the walls from the map struct
+            walls = map.walls;
             % Get intersections with walls
-            collPts= findCollisions(obj);
+            collPts= findCollisions(obj,walls);
             % Check that there are intersections
             bump= [0 0 0];    % Initialize to no bumps
             if ~isempty(collPts)
@@ -743,17 +857,21 @@ classdef CreateRobot < handle
             end
         end
         
-        function cliff= genCliff(obj)
-        % cliff = genCliff(obj)
+        function cliff= genCliff(obj, map)
+        % cliff = genCliff(obj,map)
         % Generates a reading for the cliff sensors
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % cliff - Vector of doubles [right front-right front-left left],
         %   high values if there are no lines, low values for lines
             
+            % extract the line data from map
+            lines = map.lines;
+
             % Create lines representing robot to look for intersections
             % Get robot information
             x_rob= obj.posAbs(1);
@@ -764,12 +882,12 @@ classdef CreateRobot < handle
             % Check against every obstacle (individually)
             x_int= [];              % Position of intersections
             y_int= [];
-            for i= 1:size(obj.mapLines,1)% Count variable for obstacles
+            for i= 1:size(lines,1)% Count variable for obstacles
                 % Get line data
-                x1= obj.mapLines(i,1);
-                y1= obj.mapLines(i,2);
-                x2= obj.mapLines(i,3);
-                y2= obj.mapLines(i,4);
+                x1= lines(i,1);
+                y1= lines(i,2);
+                x2= lines(i,3);
+                y2= lines(i,4);
                 
                 % Find intersection points on infinite lines
                 m= (y2-y1)/(x2-x1);     % Slope of the line
@@ -848,16 +966,20 @@ classdef CreateRobot < handle
             cliff= 20*cliff+1.5+noiseVal;
         end
         
-        function wall= genIR(obj)
-        % wall = genIR(obj)
+        function wall= genIR(obj,map)
+        % wall = genIR(obj,map)
         % Generates a reading for the infrared wall sensor
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % wall - Boolean double, 1 if a wall is within range on the right
         %   of the robot
+
+            %extract the walls from the map struct
+            walls = map.walls;
             
             % Calculate position of sensor
             sensAng= -0.225*pi; % Sensor placement relative to front of robot
@@ -867,7 +989,7 @@ classdef CreateRobot < handle
             % Solve for distance using general function
             sensAngDir= -0.5*pi;    % Sensor looks to the right
             distIR= findDist(obj,x_sensor,y_sensor,...
-                obj.rangeIR,obj.thAbs+sensAngDir);
+                obj.rangeIR,obj.thAbs+sensAngDir,walls);
             
             % Get noise to change the effective range of the infrared
             if isfield(obj.noise,'wall')
@@ -882,17 +1004,22 @@ classdef CreateRobot < handle
             wall= distIR < obj.rangeIR+noiseVal;
         end
         
-        function vwall= genVWall(obj)
-        % vwall = genVWall(obj)
+        function vwall= genVWall(obj,map)
+        % vwall = genVWall(obj,map)
         % Generates a reading for the virtual wall sensor
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % vwall - Boolean double, 1 if the robot is within the field of a
         % virtual wall, or the "halo" surrounding the emitter
-            
+        
+            % extract walls and vwalls from map
+            walls = map.walls;
+            vwalls = map.vwalls;
+
             % Get sensor position
             x_sensor= obj.posAbs(1)+obj.radius*cos(obj.thAbs);
             y_sensor= obj.posAbs(2)+obj.radius*sin(obj.thAbs);
@@ -908,21 +1035,21 @@ classdef CreateRobot < handle
             
             % Check against all virtual wall ranges
             vwall= 0;   % Initialize output to no-wall
-            for i= 1:size(obj.mapVWalls,1)
+            for i= 1:size(vwalls,1)
                 % Get emitter position
-                x_emit= obj.mapVWalls(i,1);
-                y_emit= obj.mapVWalls(i,2);
+                x_emit= vwalls(i,1);
+                y_emit= vwalls(i,2);
                 
                 % Check if sensor is within halo
                 if sqrt((x_sensor-x_emit)^2+(y_sensor-y_emit)^2) < halo_rad
                     vwall_seen= 1;
                 else
                     % Get more emitter constants
-                    th= obj.mapVWalls(i,3);
-                    if obj.mapVWalls(i,4) == 1
+                    th= vwalls(i,3);
+                    if vwalls(i,4) == 1
                         range= range_short;
                         ang= ang_short;
-                    elseif obj.mapVWalls(i,4) == 2
+                    elseif vwalls(i,4) == 2
                         range= range_med;
                         ang= ang_med;
                     else
@@ -953,24 +1080,28 @@ classdef CreateRobot < handle
                 % Check for walls between robot and emitter
                 dist_emit= sqrt((x_emit-x_sensor)^2+(y_emit-y_sensor)^2);
                 dist_vwall= findDist(obj,x_sensor,y_sensor,dist_emit,...
-                    atan2(y_emit-y_sensor,x_emit-x_sensor));
+                    atan2(y_emit-y_sensor,x_emit-x_sensor),walls);
                 if vwall_seen && dist_vwall == dist_emit
                     vwall= 1;
                 end
             end
         end
         
-        function distSonar= genSonar(obj)
-        % distSonar = genSonar(obj)
+        function distSonar= genSonar(obj,map)
+        % distSonar = genSonar(obj,map)
         % Generates a reading for all sonar sensors
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct data from loadMap
         %
         % Output:
         % distSonar - Vector of doubles [front left back right],
         %   distance along each line of sight to nearest obstacle
             
+            % extract wall data from map struct
+            walls = map.walls;
+
             % Get noise parameters
             if isfield(obj.noise,'sonar')
                 noiseAvg= obj.noise.sonar(1);
@@ -994,7 +1125,7 @@ classdef CreateRobot < handle
                 
                 % Solve for distance using general function
                 distSonar(i)= findDist(obj,x_sensor,y_sensor,...
-                    obj.rangeSonar+obj.radius,th_sensor);
+                    obj.rangeSonar+obj.radius,th_sensor,walls);
                 
                 distSonar(i) = distSonar(i)-obj.radius; 
                 % Do not add sensor noise if sensor saturated to max value
@@ -1016,12 +1147,13 @@ classdef CreateRobot < handle
             end
         end
         
-        function rsDepth= genRSDepth(obj)
-        % rsDepth = genRSDepth(obj)
+        function rsDepth= genRSDepth(obj,map)
+        % rsDepth = genRSDepth(obj,map)
         % Generates a reading for the RealSense Depth sensor
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of wall data from loadMap
         %
         % Output:
         % rsDepth - Array of doubles, of length 10 with the
@@ -1035,6 +1167,9 @@ classdef CreateRobot < handle
         %
         % Note: camera is at (+.13 m) as specified in obj.cameraDisplace
         
+            % extract wall data from map struct
+            walls = map.walls;
+
             % Number of points to sample
             num_points = obj.rsdepth_n_pts;
             
@@ -1063,7 +1198,7 @@ classdef CreateRobot < handle
                     
                 % Solve for distance using general function
                 distRSDepth(i)= findDist(obj,x_sensor,y_sensor,...
-                    obj.rangeRSDepth,th_sensor);
+                    obj.rangeRSDepth,th_sensor,walls);
                 
                 % Correct for real sense output and only give the distance
                 % between the plane of the sensor and the object
@@ -1096,7 +1231,7 @@ classdef CreateRobot < handle
             
             % See if robot is intersecting a wall
             center2wall = findDist(obj,obj.posAbs(1),obj.posAbs(2),...
-                    obj.radius,obj.thAbs);
+                    obj.radius,obj.thAbs,walls);
             if center2wall < obj.radius
                 distRSDepth = zeros(size(distRSDepth));
             end
@@ -1104,18 +1239,22 @@ classdef CreateRobot < handle
             
         end
         
-        function distLidar= genLidar(obj)
-        % distLidar = genLidar(obj)
+        function distLidar= genLidar(obj,map)
+        % distLidar = genLidar(obj,map)
         % Generates a reading for the LIDAR sensor
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % distLidar - Vector of doubles of length obj.numPtsLidar
         %   Distances correspond to angles [-angRangeLidar/2 angRangeLidar/2]
         %   Remember that angles are defined positive counter-clockwise
             
+            % extract the wall data from the map struct
+            walls = map.walls;
+
             % Calculate position of sensor (same for all angles)
             x_sensor= obj.posAbs(1)+obj.radius*cos(obj.thAbs);
             y_sensor= obj.posAbs(2)+obj.radius*sin(obj.thAbs);
@@ -1141,7 +1280,7 @@ classdef CreateRobot < handle
                 
                 % Solve for distance using general function
                 distLidar(i)= findDist(obj,x_sensor,y_sensor,...
-                    obj.rangeLidar,th_sensor)+noiseVal;
+                    obj.rangeLidar,th_sensor,walls)+noiseVal;
                 
                 % Set any readings below minimum to the minimum
                 distLidar(i)= max(distLidar(i),obj.rangeMinLidar);
@@ -1150,8 +1289,8 @@ classdef CreateRobot < handle
         
 
         
-        function [ang dist color id]= genCamera(obj)
-        % [ang dist color id] = genCamera(obj)
+        function [ang, dist, color, id]= genCamera(obj,map)
+        % [ang dist color id] = genCamera(obj,map)
         % Generates the output from the blob detection on the camera,
         % detects only beacons
         % Camera is located at 'cameraDisplace' distance (+0.13m) 
@@ -1159,6 +1298,7 @@ classdef CreateRobot < handle
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % ang - Vector of doubles, each the angle relative to robot at 
@@ -1167,6 +1307,10 @@ classdef CreateRobot < handle
         % color - Matrix of doubles of width three (color vector), 
         %   each row the color of beacon detected
         % id  - AR tag ID
+
+            % extract information from map struct
+            beacs = map.beacs;
+            walls = map.walls;
             
             % Get robot position and orientation
             x_r= obj.posAbs(1);
@@ -1184,12 +1328,12 @@ classdef CreateRobot < handle
             color= [];
             id = [];
             
-            for i= 1:size(obj.mapBeacs,1)   % Go through all the beacons
+            for i= 1:size(beacs,1)   % Go through all the beacons
                 % Get beacon position
-                x_b   = obj.mapBeacs{i,1};
-                y_b   = obj.mapBeacs{i,2};
-                clr_b = [obj.mapBeacs{i,3},obj.mapBeacs{i,4},obj.mapBeacs{i,5}];
-                id_b  = str2num(obj.mapBeacs{i,6});
+                x_b   = beacs{i,1};
+                y_b   = beacs{i,2};
+                clr_b = [beacs{i,3},beacs{i,4},beacs{i,5}];
+                id_b  = str2num(beacs{i,6});
                 
                 % Find heading and distance from camera to beacon
                 ang_b= obj.wrap2pi(atan2(y_b-y_c,x_b-x_c)-th_c);
@@ -1197,7 +1341,7 @@ classdef CreateRobot < handle
                 
                 % See if there is a wall in the way (blocks field-of-view)
                 walldist= findDist(obj,x_c,y_c,dist_b, ...
-                        obj.wrap2pi(ang_b+th_c));
+                        obj.wrap2pi(ang_b+th_c),walls);
                 
                 % If camera can see beacon, then save beacon information
                 if abs(ang_b) <= obj.angRangeCamera && ...
@@ -1329,7 +1473,7 @@ classdef CreateRobot < handle
             obj.odomAng= obj.odomAng+dir*turn+noiseVal;
         end
         
-        function [x y th]= genOverhead(obj)
+        function [x, y, th]= genOverhead(obj)
         % [x y th] = genOverhead(obj)
         % Generate the output of the overhead localization system
         %
@@ -1348,7 +1492,7 @@ classdef CreateRobot < handle
         end
         
     % Computational Functions
-        function dist= findDist(obj,x_sensor,y_sensor,range,th)
+        function dist= findDist(obj,x_sensor,y_sensor,range,th,walls)
         % dist = findDist(obj,x_sensor,y_sensor,range,th)
         % Finds the distance a sensor is measuring at a certain angle
         %
@@ -1358,11 +1502,13 @@ classdef CreateRobot < handle
         % y_sensor - Y-coordinate of the sensor position
         % range - Linear range of the sensor
         % th - Angle the sensor is investigating in absolute coordinates
+        % walls - matrix of wall data from loadMap struct
         
         % Output:
         % dist - Linear distance along the line of sight of the sensor to
         % 	the closest obstacle
-                
+            
+
             % Create line of sight
             x_range= x_sensor+range*cos(th);   % Range of sensor
             y_range= y_sensor+range*sin(th);
@@ -1382,10 +1528,10 @@ classdef CreateRobot < handle
             j= 1;                   % Count variable for intersections
             x_int= [];              % Position of intersections
             y_int= [];
-            for i= 1:size(obj.mapWalls,1)% Count variable for obstacles
+            for i= 1:size(walls,1)% Count variable for obstacles
                 % Find line equations for wall lines
-                m_wall= (obj.mapWalls(i,4)-obj.mapWalls(i,2))/...
-                    (obj.mapWalls(i,3)-obj.mapWalls(i,1));
+                m_wall= (walls(i,4)-walls(i,2))/...
+                    (walls(i,3)-walls(i,1));
                 if m_wall > 1e14
                     m_wall= inf;
                 elseif abs(m_wall) < 1e-14
@@ -1393,7 +1539,7 @@ classdef CreateRobot < handle
                 elseif m_wall < -1e14
                     m_wall= -inf;
                 end
-                b_wall= obj.mapWalls(i,2)-m_wall*obj.mapWalls(i,1);
+                b_wall= walls(i,2)-m_wall*walls(i,1);
                 
                 % Find intersection of infinitely long walls
                 if ~(m_sensor == m_wall)    % Not parallel lines
@@ -1401,7 +1547,7 @@ classdef CreateRobot < handle
                         x_hit= x_sensor;
                         y_hit= m_wall*x_hit+b_wall;
                     elseif isinf(m_wall)    % Vertical wall line
-                        x_hit= obj.mapWalls(i,1);
+                        x_hit= walls(i,1);
                         y_hit= m_sensor*x_hit+b_sensor;
                     else                    % Normal conditions
                         x_hit= (b_wall-b_sensor)/(m_sensor-m_wall);
@@ -1415,10 +1561,10 @@ classdef CreateRobot < handle
                             x_hit-max(x_sensor,x_range) < 0.001 && ...
                             y_hit-min(y_sensor,y_range) > -0.001 && ...
                             y_hit-max(y_sensor,y_range) < 0.001 && ...
-                            x_hit-min(obj.mapWalls(i,[1 3])) > -0.001 && ...
-                            x_hit-max(obj.mapWalls(i,[1 3])) < 0.001 && ...
-                            y_hit-min(obj.mapWalls(i,[2 4])) > -0.001 && ...
-                            y_hit-max(obj.mapWalls(i,[2 4])) < 0.001
+                            x_hit-min(walls(i,[1 3])) > -0.001 && ...
+                            x_hit-max(walls(i,[1 3])) < 0.001 && ...
+                            y_hit-min(walls(i,[2 4])) > -0.001 && ...
+                            y_hit-max(walls(i,[2 4])) < 0.001
                         x_int(j)= x_hit;
                         y_int(j)= y_hit;
                         j= j+1;
@@ -1434,12 +1580,13 @@ classdef CreateRobot < handle
             end
         end
         
-        function collPts= findCollisions(obj)
+        function collPts= findCollisions(obj,walls)
         % collPts = findCollisions(obj)
         % Check if the robot intersects any walls
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % walls - matrix of wall data from loadMap map struct
         %
         % Output:
         % collPts - Matrix of doubles [x y i f]
@@ -1454,14 +1601,15 @@ classdef CreateRobot < handle
             yR= obj.posAbs(2);
             rad= obj.radius; % Radius of the robot
             
+            
             % Find nearest point on every wall
             collPts= [];
-            for i= 1:size(obj.mapWalls,1)
+            for i= 1:size(walls,1)
                 % Extract wall data
-                x1= obj.mapWalls(i,1);
-                y1= obj.mapWalls(i,2);
-                x2= obj.mapWalls(i,3);
-                y2= obj.mapWalls(i,4);
+                x1= walls(i,1);
+                y1= walls(i,2);
+                x2= walls(i,3);
+                y2= walls(i,4);
                 
                 % Assume wall is infinitely long
                 m= (y2-y1)/(x2-x1);         % Slope of wall
@@ -1505,7 +1653,7 @@ classdef CreateRobot < handle
             
             % Only keep closest two collision points
             if size(collPts,1) > 2
-                [distances distIdx]= sort(sqrt((collPts(:,1)-xR).^2+...
+                [distances, distIdx]= sort(sqrt((collPts(:,1)-xR).^2+...
                     (collPts(:,2)-yR).^2));
                 collPts= collPts(distIdx(1:2),:);
             end
@@ -1607,7 +1755,7 @@ classdef CreateRobot < handle
             obj.wAbs= w;
         end
         
-        function drive1Wall(obj,tStep,collPts)
+        function drive1Wall(obj,tStep,collPts,walls)
         % drive1Wall(obj,tStep,collPts)
         % Updates the new position based on the current position and
         % velocities when one wall affects the robot
@@ -1621,6 +1769,7 @@ classdef CreateRobot < handle
         %   i - Index of wall, used as obj.mapWalls(i,:)
         %   f - Corner flag, is 1 if intersection point is a corner
         %   To be used in this function, collPts must have exactly 1 row
+        % walls - matrix of wall data from loadMap
             
             % Get important values
             r= obj.radius;
@@ -1633,15 +1782,15 @@ classdef CreateRobot < handle
             i_wall= collPts(3);
             
             % Get wall data with x1 <= x2
-            [x1,wall_idx]= min(obj.mapWalls(i_wall,[1 3]));
+            [x1,wall_idx]= min(walls(i_wall,[1 3]));
             if wall_idx == 1
-                y1= obj.mapWalls(i_wall,2);
-                x2= obj.mapWalls(i_wall,3);
-                y2= obj.mapWalls(i_wall,4);
+                y1= walls(i_wall,2);
+                x2= walls(i_wall,3);
+                y2= walls(i_wall,4);
             else
-                y1= obj.mapWalls(i_wall,4);
-                x2= obj.mapWalls(i_wall,1);
-                y2= obj.mapWalls(i_wall,2);
+                y1= walls(i_wall,4);
+                x2= walls(i_wall,1);
+                y2= walls(i_wall,2);
             end
             
             % Get tangential vector to the wall in the correct direction
@@ -1695,7 +1844,7 @@ classdef CreateRobot < handle
             obj.wAbs= w;
         end
         
-        function drive2Wall(obj,tStep,collPts)
+        function drive2Wall(obj,tStep,collPts,walls)
         % drive2Wall(obj,tStep,collPts)
         % Updates the new position based on the current position and
         % velocities when two walls affect the robot
@@ -1709,6 +1858,7 @@ classdef CreateRobot < handle
         %   i - Index of wall, used as obj.mapWalls(i,:)
         %   f - Corner flag, is 1 if intersection point is a corner
         %   To be used in this function, collPts must have exactly 2 rows
+        % walls - matrix of wall data from loadMap
             
             % Get important values
             x= obj.posAbs(1);
@@ -1728,16 +1878,16 @@ classdef CreateRobot < handle
             nV= zeros(length(i_wall),2);
             for j= 1:length(i_wall)
                 % Check that wall is not vertical
-                if obj.mapWalls(i_wall(j),1) ~= obj.mapWalls(i_wall(j),3)
-                    [x1(j) wall_idx]= min(obj.mapWalls(i_wall(j),[1 3]));
+                if walls(i_wall(j),1) ~= walls(i_wall(j),3)
+                    [x1(j), wall_idx]= min(walls(i_wall(j),[1 3]));
                     if wall_idx == 1
-                        y1(j)= obj.mapWalls(i_wall(j),2);
-                        x2(j)= obj.mapWalls(i_wall(j),3);
-                        y2(j)= obj.mapWalls(i_wall(j),4);
+                        y1(j)= walls(i_wall(j),2);
+                        x2(j)= walls(i_wall(j),3);
+                        y2(j)= walls(i_wall(j),4);
                     else
-                        y1(j)= obj.mapWalls(i_wall(j),4);
-                        x2(j)= obj.mapWalls(i_wall(j),1);
-                        y2(j)= obj.mapWalls(i_wall(j),2);
+                        y1(j)= walls(i_wall(j),4);
+                        x2(j)= walls(i_wall(j),1);
+                        y2(j)= walls(i_wall(j),2);
                     end
                     
                     % Get tangential vector to wall in the correct direction
@@ -1750,15 +1900,15 @@ classdef CreateRobot < handle
                             sqrt((x1(j)-x2(j))^2+(y1(j)-y2(j))^2);
                     end
                 else    % Vertical wall
-                    [y1(j) wall_idx]= min(obj.mapWalls(i_wall(j),[2 4]));
+                    [y1(j), wall_idx]= min(walls(i_wall(j),[2 4]));
                     if wall_idx == 1
-                        x1(j)= obj.mapWalls(i_wall(j),1);
-                        x2(j)= obj.mapWalls(i_wall(j),3);
-                        y2(j)= obj.mapWalls(i_wall(j),4);
+                        x1(j)= walls(i_wall(j),1);
+                        x2(j)= walls(i_wall(j),3);
+                        y2(j)= walls(i_wall(j),4);
                     else
-                        x1(j)= obj.mapWalls(i_wall(j),3);
-                        x2(j)= obj.mapWalls(i_wall(j),1);
-                        y2(j)= obj.mapWalls(i_wall(j),2);
+                        x1(j)= walls(i_wall(j),3);
+                        x2(j)= walls(i_wall(j),1);
+                        y2(j)= walls(i_wall(j),2);
                     end
                     
                     % Get tangential vector to wall in the correct direction
@@ -1796,11 +1946,11 @@ classdef CreateRobot < handle
                     end
                 elseif dot(v_int,nV(1,:)) <= 0
                     collPts= collPts(1,:);  % Drive towards wall 1
-                    drive1Wall(obj,tStep,collPts)
+                    drive1Wall(obj,tStep,collPts,walls)
                     done= true;
                 elseif dot(v_int,nV(2,:)) <= 0
                     collPts= collPts(2,:);  % Drive towards wall 2
-                    drive1Wall(obj,tStep,collPts)
+                    drive1Wall(obj,tStep,collPts,walls)
                     done= true;
                 else                        % Drive away from walls
                     v= v_int;
@@ -1813,10 +1963,10 @@ classdef CreateRobot < handle
                 elseif sign(dot(v_int,tV(1,:))) == sign(dot(v_int,tV(2,:)))
                     if v_n1_int < v_n2_int      % Drive towards wall 1
                         collPts= collPts(1,:);
-                        drive1Wall(obj,tStep,collPts)
+                        drive1Wall(obj,tStep,collPts,walls)
                     else                        % Drive towards wall 2
                         collPts= collPts(2,:);
-                        drive1Wall(obj,tStep,collPts)
+                        drive1Wall(obj,tStep,collPts,walls)
                     end
                     done= true;
                 else                            % Stuck in the corner
@@ -1920,7 +2070,7 @@ classdef CreateRobot < handle
                     
                     % Add the translator function call to output data
                     fcn_called= 'RoombaInit';
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                     % Display messages that toolbox runs
                     disp('Establishing connection to Roomba...')
@@ -1939,11 +2089,11 @@ classdef CreateRobot < handle
             end
         end
         
-        function [BumpRight BumpLeft BumpFront Wall virtWall CliffLft ...
-                CliffRgt CliffFrntLft CliffFrntRgt LeftCurrOver ...
-                RightCurrOver DirtL DirtR ButtonPlay ButtonAdv Dist ...
-                Angle Volts Current Temp Charge Capacity pCharge]= ...
-                AllSensorsReadRoomba(obj)
+        function [BumpRight, BumpLeft, BumpFront, Wall, virtWall, CliffLft, ...
+                CliffRgt, CliffFrntLft, CliffFrntRgt, LeftCurrOver, ...
+                RightCurrOver, DirtL, DirtR, ButtonPlay, ButtonAdv, Dist, ...
+                Angle, Volts, Current, Temp, Charge, Capacity, pCharge]= ...
+                AllSensorsReadRoomba(obj,map)
         % [BumpRight BumpLeft BumpFront Wall virtWall CliffLft 
         %   CliffRgt CliffFrntLft CliffFrntRgt LeftCurrOver ...
         %   RightCurrOver DirtL DirtR ButtonPlay ButtonAdv Dist ...
@@ -1953,6 +2103,7 @@ classdef CreateRobot < handle
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % BumpRight - Boolean double, 1 if right bump sensor is triggered
@@ -2004,30 +2155,30 @@ classdef CreateRobot < handle
                     pause(obj.comDelay)
 
                     % Read bump sensors
-                    bump= genBump(obj);
+                    bump= genBump(obj,map);
                     BumpRight= bump(1);
                     BumpFront= bump(2);
                     BumpLeft= bump(3);
 
                     % Read infrared wall sensor
-                    Wall= genIR(obj);
+                    Wall= genIR(obj,map);
 
                     % Read cliff sensors
-                    cliff= genCliff(obj);
+                    cliff= genCliff(obj,map);
                     CliffRgt= cliff(1);
                     CliffFrntRgt= cliff(2);
                     CliffFrntLft= cliff(3);
                     CliffLft= cliff(4);
                     
                     % Read the state of the buttons
-                    [ButtonAdv ButtonPlay]= ButtonsSensorRoomba(obj);
+                    [ButtonAdv, ButtonPlay]= ButtonsSensorRoomba(obj);
 
                     % Read odometry
                     Dist= DistanceSensorRoomba(obj);
                     Angle= AngleSensorRoomba(obj);
 
                     % Read IR receiver for virtual wall signal
-                    virtWall= genVWall(obj);
+                    virtWall= genVWall(obj,map);
 
                     % Unused in simulation
                     LeftCurrOver= 0;    % Assume no overcurrent
@@ -2037,7 +2188,7 @@ classdef CreateRobot < handle
                     Volts= BatteryVoltageRoomba(obj);
                     Current= CurrentTesterRoomba(obj);
                     Temp= 25;               % Assume room temperature
-                    [Charge Capacity pCharge]= ...
+                    [Charge, Capacity, pCharge]= ...
                         BatteryChargeReaderRoomba(obj);
 
                     % Add the translator function call to output data
@@ -2051,7 +2202,7 @@ classdef CreateRobot < handle
                         RightCurrOver,DirtL,DirtR,ButtonPlay,ButtonAdv,...
                         Dist,Angle,Volts,Current,Temp,Charge,Capacity,...
                         pCharge);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2093,7 +2244,7 @@ classdef CreateRobot < handle
                     
                     % Add the translator function call to output data
                     fcn_called= sprintf('%.3f= AngleSensorRoomba',AngleR);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2105,7 +2256,7 @@ classdef CreateRobot < handle
             end
         end
         
-        function [Charge Capacity Percent]= BatteryChargeReaderRoomba(obj)
+        function [Charge, Capacity, Percent]= BatteryChargeReaderRoomba(obj)
         % [Charge Capacity Percent] = BatteryChargeReaderRoomba(obj)
         % Reads the charge remaining in the battery
         % This is not important to the functionality of the simulator
@@ -2141,7 +2292,7 @@ classdef CreateRobot < handle
                     fcn_called= sprintf(...
                         '[%.3f %.3f %.3f]= BatteryChargeReaderRoomba',...
                         Charge,Capacity,Percent);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2184,7 +2335,7 @@ classdef CreateRobot < handle
                     % Add the translator function call to output data
                     fcn_called= sprintf('%.3f= BatteryVoltageRoomba',...
                         Voltage);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2197,7 +2348,7 @@ classdef CreateRobot < handle
         end
         
         function [BumpRight, BumpLeft, WheDropRight, WheDropLeft, ...
-                WheDropCaster, BumpFront] = BumpsWheelDropsSensorsRoomba(obj)
+                WheDropCaster, BumpFront] = BumpsWheelDropsSensorsRoomba(obj,walls)
         %[BumpRight BumpLeft WheDropRight WheDropLeft WheDropCaster 
         %   BumpFront] = BumpsWheelDropsSensorsRoomba(obj)
         % Reads status of bump and wheel drop sensors
@@ -2206,6 +2357,7 @@ classdef CreateRobot < handle
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % walls - matrix of wall data from loadMap
         %
         % Output:
         % BumpRight - Boolean double, 1 if right bump sensor is triggered
@@ -2234,7 +2386,7 @@ classdef CreateRobot < handle
                     pause(obj.comDelay)
                     
                     % Read bump sensors
-                    bump= genBump(obj);
+                    bump= genBump(obj,walls);
                     BumpRight= bump(1);
                     BumpFront= bump(2);
                     BumpLeft= bump(3);
@@ -2249,7 +2401,7 @@ classdef CreateRobot < handle
                         '%.0f]= BumpsWheelDropsSensorsRoomba'],...
                         BumpRight,BumpLeft,WheDropRight,WheDropLeft,...
                         WheDropCaster,BumpFront);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2306,7 +2458,7 @@ classdef CreateRobot < handle
                     % Add the translator function call to output data
                     fcn_called= sprintf('[%.0f %.0f]= ButtonsSensorRoomba'...
                         ,ButtonAdv,ButtonPlay);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2348,7 +2500,7 @@ classdef CreateRobot < handle
                     % Add the translator function call to output data
                     fcn_called= sprintf(...
                         '%.0f= CliffFrontLeftSensorRoomba',state);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2390,7 +2542,7 @@ classdef CreateRobot < handle
                     % Add the translator function call to output data
                     fcn_called= sprintf(...
                         '%.0f= CliffFrontRightSensorRoomba',state);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2432,7 +2584,7 @@ classdef CreateRobot < handle
                     % Add the translator function call to output data
                     fcn_called= sprintf('%.0f= CliffLeftSensorRoomba',...
                         state);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2474,7 +2626,7 @@ classdef CreateRobot < handle
                     % Add the translator function call to output data
                     fcn_called= sprintf('%.0f= CliffRightSensorRoomba',...
                         state);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2486,15 +2638,18 @@ classdef CreateRobot < handle
             end
         end
         
-        function strg= CliffFrontLeftSignalStrengthRoomba(obj)
+        function strg= CliffFrontLeftSignalStrengthRoomba(obj,map)
         % strg = CliffFrontLeftSignalStrengthRoomba(obj)
         % Reads strength of the front left cliff sensor signal
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % strg - uint16, lower value if sensor is over line or cliff (%)
+
+            lines = map.lines;
             
             % Check for valid input
             if ~isa(obj,'CreateRobot')
@@ -2511,13 +2666,13 @@ classdef CreateRobot < handle
                     pause(obj.comDelay)
                     
                     % Signal strength based on if a line is there or not
-                    cliff= genCliff(obj);
+                    cliff= genCliff(obj,lines);
                     strg= cliff(3);
                     
                     % Add the translator function call to output data
                     fcn_called= sprintf(...
                         '%.3f= CliffFrontLeftSignalStrengthRoomba',strg);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2530,16 +2685,19 @@ classdef CreateRobot < handle
             end
         end
         
-        function strg= CliffFrontRightSignalStrengthRoomba(obj)
+        function strg= CliffFrontRightSignalStrengthRoomba(obj,map)
         % strg = CliffFrontRightSignalStrengthRoomba(obj)
         % Reads strength of the front right cliff sensor signal
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % strg - uint16, lower value if sensor is over line or cliff (%)
             
+            lines = map.lines;
+
             % Check for valid input
             if ~isa(obj,'CreateRobot')
                 error('Simulator:invalidInput',...
@@ -2555,13 +2713,13 @@ classdef CreateRobot < handle
                     pause(obj.comDelay)
                     
                     % Signal strength based on if a line is there or not
-                    cliff= genCliff(obj);
+                    cliff= genCliff(obj,lines);
                     strg= cliff(2);
                     
                     % Add the translator function call to output data
                     fcn_called= sprintf(...
                         '%.3f= CliffFrontRightSignalStrengthRoomba',strg);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2574,16 +2732,19 @@ classdef CreateRobot < handle
             end
         end
         
-        function strg= CliffLeftSignalStrengthRoomba(obj)
+        function strg= CliffLeftSignalStrengthRoomba(obj,map)
         % strg = CliffLeftSignalStrengthRoomba(obj)
         % Reads strength of the left cliff sensor signal
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % strg - uint16, lower value if sensor is over line or cliff (%)
             
+            lines = map.lines;
+
             % Check for valid input
             if ~isa(obj,'CreateRobot')
                 error('Simulator:invalidInput',...
@@ -2599,13 +2760,13 @@ classdef CreateRobot < handle
                     pause(obj.comDelay)
                     
                     % Signal strength based on if a line is there or not
-                    cliff= genCliff(obj);
+                    cliff= genCliff(obj,lines);
                     strg= cliff(4);
                     
                     % Add the translator function call to output data
                     fcn_called= ...
                         sprintf('%.3f= CliffLeftSignalStrengthRoomba',strg);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2618,16 +2779,19 @@ classdef CreateRobot < handle
             end
         end
         
-        function strg= CliffRightSignalStrengthRoomba(obj)
+        function strg= CliffRightSignalStrengthRoomba(obj,map)
         % strg = CliffRightSignalStrengthRoomba(obj)
         % Reads strength of the right cliff sensor signal
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % strg - uint16, lower value if sensor is over line or cliff (%)
-            
+        
+            lines = map.lines;
+
             % Check for valid input
             if ~isa(obj,'CreateRobot')
                 error('Simulator:invalidInput',...
@@ -2642,13 +2806,13 @@ classdef CreateRobot < handle
                     pause(obj.comDelay)
                     
                     % Signal strength based on if a line is there or not
-                    cliff= genCliff(obj);
+                    cliff= genCliff(obj,lines);
                     strg= cliff(1);
                     
                     % Add the translator function call to output data
                     fcn_called= sprintf(...
                         '%.3f= CliffRightSignalStrengthRoomba',strg);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2694,7 +2858,7 @@ classdef CreateRobot < handle
                     % Add the translator function call to output data
                     fcn_called= sprintf('%.3f= CurrentTesterRoomba',...
                         Current);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2752,7 +2916,7 @@ classdef CreateRobot < handle
                     
                     % Add the translator function call to output data
                     fcn_called= sprintf('DemoCmdsCreate(%.0f)',DemoNum);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                     % Placeholder until demo is programmed
                     fprintf('Demo number %.0f selected.\n',DemoNum)
@@ -2807,7 +2971,7 @@ classdef CreateRobot < handle
                     % Add the translator function call to output data
                     fcn_called= sprintf('%.3f= DistanceSensorRoomba',...
                         Distance);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2847,7 +3011,7 @@ classdef CreateRobot < handle
                     
                     % Add the translator function call to output data
                     fcn_called= 'BeepRoomba';
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -2923,7 +3087,7 @@ classdef CreateRobot < handle
                     % Add the translator function call to output data
                     fcn_called= sprintf('SetLEDsRoomba(%.0f,%.0f,%.0f)',...
                         LED,pColor,pIntensity);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                     % Convert power LED input from percent to decimal
                     pColor= pColor/100;
@@ -3015,7 +3179,7 @@ classdef CreateRobot < handle
                     % Add the translator function call to output data
                     fcn_called= sprintf('SetFwdVelRadiusRoomba(%.3f,%.3f)',...
                         FwdVel,Radius);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                     % Check for input within range
                     if abs(FwdVel) > 0.5
@@ -3114,7 +3278,7 @@ classdef CreateRobot < handle
                     % Add the translator function call to output data
                     fcn_called= sprintf('SetDriveWheelsCreate(%.3f,%.3f)',...
                         rightWheel,leftWheel);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                     % Check for input within range
                     if rightWheel < -0.5
@@ -3194,7 +3358,7 @@ classdef CreateRobot < handle
                     % Add the translator function call to output data
                     fcn_called= sprintf('SetFwdVelAngVelCreate(%.3f,%.3f)',...
                         FwdVel,AngVel);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                     % Limit individual wheel velocities
                     wheelRight= FwdVel+AngVel*obj.wheelbase/2;
@@ -3209,6 +3373,8 @@ classdef CreateRobot < handle
                             'Choose a velocity combination that does '...
                             'not exceed these limits. Values set to max.'])
                         % Recalculate fwd and ang velocities
+                        wheelRight
+                        wheelLeft
                         FwdVel= (wheelRight+wheelLeft)/2;
                         AngVel= (wheelRight-wheelLeft)/obj.wheelbase;
                     end
@@ -3264,7 +3430,7 @@ classdef CreateRobot < handle
                     
                     % Add the translator function call to output data
                     fcn_called= sprintf('travelDist(%.3f,%.3f)',speed,distance);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                     % Check for input within range
                     if speed < 0
@@ -3344,7 +3510,7 @@ classdef CreateRobot < handle
                     
                     % Add the translator function call to output data
                     fcn_called= sprintf('turnAngle(%.3f,%.3f)',speed,angle);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                     % Check for input within range
                     if speed < 0
@@ -3418,16 +3584,17 @@ classdef CreateRobot < handle
             end
         end
         
-        function state= VirtualWallSensorCreate(obj)
-        % state = VirtualWallSensorCreate(obj)
+        function state= VirtualWallSensorCreate(obj,map)
+        % state = VirtualWallSensorCreate(obj,map)
         % Reads the state of the virtual wall sensor
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % state - Boolean double, 1 if the robot detects a virtual wall
-            
+           
             % Check for valid input
             if ~isa(obj,'CreateRobot')
                 error('Simulator:invalidInput',...
@@ -3443,12 +3610,12 @@ classdef CreateRobot < handle
                     pause(obj.comDelay)
                     
                     % Find out if robot is within range of any virtual wall
-                    state= genVWall(obj);
+                    state= genVWall(obj,map);
                     
                     % Add the translator function call to output data
                     fcn_called= sprintf('%.0f= VirtualWallSensorCreate',...
                         state);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -3541,7 +3708,7 @@ classdef CreateRobot < handle
                     else
                         fcn_called= sprintf('%.3f= ReadSonar',distance);
                     end
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -3553,8 +3720,8 @@ classdef CreateRobot < handle
             end
         end
         
-        function distance= ReadSonarMultiple(obj,sonarNum)
-        % distance = ReadSonarMultiple(obj,sonarNum)
+        function distance= ReadSonarMultiple(obj,sonarNum,map)
+        % distance = ReadSonarMultiple(obj,sonarNum,map)
         % Reads the distance returned by the specified sonar sensor
         %
         % Input:
@@ -3565,12 +3732,14 @@ classdef CreateRobot < handle
         %       2 - Front
         %       3 - Left
         %       4 - Back
+        % map - struct of map data from loadMap
         %
         % Output:
         % distance - Double, distance to nearest obstacle in the path of 
         %   the specified sonar, or an empty vector no obstacle 
         %   in range
-            
+          
+
             % Check for valid input
             if ~isa(obj,'CreateRobot')
                 error('Simulator:invalidInput',...
@@ -3586,7 +3755,7 @@ classdef CreateRobot < handle
                     pause(obj.comDelay)
                     
                     % Generate reading for sensor
-                    distSonar= genSonar(obj);
+                    distSonar= genSonar(obj,map);
                     
                     % Extract value for output
                     % Note difference between order of output of genSonar
@@ -3613,7 +3782,7 @@ classdef CreateRobot < handle
                         fcn_called= sprintf(['%.3f= ReadSonarMultiple'...
                             '(%.0f)'],distance,sonarNum);
                     end
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -3625,12 +3794,13 @@ classdef CreateRobot < handle
             end
         end
         
-        function distScan= LidarSensorCreate(obj)
-        % distScan = LidarSensorCreate(obj)
+        function distScan= LidarSensorCreate(obj,map)
+        % distScan = LidarSensorCreate(obj,map)
         % Reads the range of distances from the LIDAR sensor
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % distScan - Array of doubles, of length numPtsLidar with the
@@ -3639,6 +3809,8 @@ classdef CreateRobot < handle
         %   readings will be the distance to the nearest obstacle, or the
         %   range of the LIDAR if no obstacle is in range
             
+            
+
             % Check for valid input
             if ~isa(obj,'CreateRobot')
                 error('Simulator:invalidInput',...
@@ -3654,7 +3826,7 @@ classdef CreateRobot < handle
                     pause(obj.comDelay)
                     
                     % Generate reading for sensor
-                    distScan= genLidar(obj);
+                    distScan= genLidar(obj,map);
                     
                     % Add the translator function call to output data
                     fcn_called= sprintf(['[%.3f %.3f %.3f %.3f %.3f]= '...
@@ -3663,7 +3835,7 @@ classdef CreateRobot < handle
                         distScan(ceil(obj.numPtsLidar/2)),...
                         distScan(ceil(3*obj.numPtsLidar/4)),...
                         distScan(end));
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -3675,8 +3847,8 @@ classdef CreateRobot < handle
             end
         end
         
-        function [X Y Z ROT Ntag] = ReadBeacon(obj)
-        % [X Y Z ROT Ntag] = ReadBeacon(obj)
+        function [X, Y, Z, ROT, Ntag] = ReadBeacon(obj,map)
+        % [X Y Z ROT Ntag] = ReadBeacon(obj,map)
         % Reads the ARtag detection camera and reports 3-D cartesian
         % position in the camera reference frame, as well as the rotation
         % about the tag center
@@ -3688,6 +3860,7 @@ classdef CreateRobot < handle
         %
         % Input:
         % obj - Instance of the class CreateRobot
+        % map - struct of map data from loadMap
         % 
         % Output: 
         % X   - column vector of x coordinates in camera coordinates
@@ -3711,7 +3884,7 @@ classdef CreateRobot < handle
                     pause(obj.comDelay)
                     
                     % Generate reading for sensor
-                    [angle, dist,color, Ntag]= genCamera(obj);
+                    [angle, dist,color, Ntag]= genCamera(obj,map);
 
                     X = -dist.*sin(angle);      % Minus, because x-axis right
                     Y = zeros(numel(angle),1);  % Assume tags are in same plane as the camera
@@ -3725,7 +3898,7 @@ classdef CreateRobot < handle
                         fcn_called= sprintf(['[%.3f %.3f %.3f %.3f %.3f]'...
                             ' = ReadBeacon'],X(1),Y(1),Z(1),ROT(1),Ntag(1));
                     end
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -3737,12 +3910,13 @@ classdef CreateRobot < handle
             end
         end
         
-        function depth_array= RealSenseDist(obj)
-        % depth_array= RealSenseDist(obj)
+        function depth_array= RealSenseDist(obj,map)
+        % depth_array= RealSenseDist(obj,map)
         % Reads the depth from the Real Sense Depth Sensor
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % depth_array - Array of doubles, of length 10 with the first value
@@ -3770,7 +3944,7 @@ classdef CreateRobot < handle
                     request_time = tic;
                     
                     % Generate reading for sensor
-                    depth_array= genRSDepth(obj);
+                    depth_array= genRSDepth(obj,map);
                     
                     % Pause for communication delay
                     pause(obj.comDelay)
@@ -3787,7 +3961,7 @@ classdef CreateRobot < handle
                         depth_array(ceil(num_points/2)),...
                         depth_array(ceil(3*num_points/4)),...
                         depth_array(end));
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -3799,10 +3973,14 @@ classdef CreateRobot < handle
             end
         end
         
-        function tags = RealSenseTag(obj)
-        % tags = RealSenseTag(obj) Finds AprilTags in the image from the
+        function tags = RealSenseTag(obj,map)
+        % tags = RealSenseTag(obj,map) Finds AprilTags in the image from the
         % camera. Returns the id of the AprilTag, position in the frame of the
         % camera, and rotation about its center.
+        %
+        % Inputs:
+        % obj: CreateRobot object
+        % map: struct of map data from loadMap
         %
         %   Camera coordinate frame is defined as:
         %       x - axis points out of camera (depth)
@@ -3819,65 +3997,59 @@ classdef CreateRobot < handle
         %
         %   If no tags are detected, returns an empty array
          % Check for valid input
-         %Changing IF statement so this can be called on a static robot
-         %object [AA]
-            if false %~isa(obj,'CreateRobot')
-%                 error('Simulator:invalidInput',...
-%                     ['Input to RealSenseTag must have class '...
-%                     'CreateRobot.  Input argument should be the input '...
-%                     'argument to the control program'])
-            else
-                try
-                    % Check that autonomous is enabled and quit if not
-%                     autoCheck(obj)
-                    
-                    request_time = tic;
-                    
-                    % Generate reading for sensor
-                    [angle, dist, color, Ntag]= genCamera(obj);
-                    
-                    % Pause for communication delay
-                    pause(obj.comDelay)
+         % removing IF statement so this can be called on a static robot
+         % object outside of the simulator [AA]
+            try
+                % Check that autonomous is enabled and quit if not
+                %autoCheck(obj)
+                
+                request_time = tic;
+                
+                % Generate reading for sensor
+                [angle, dist, color, Ntag]= genCamera(obj,map);
+                
+                % Pause for communication delay
+                pause(obj.comDelay)
 
-                    Y = dist.*sin(angle);       % y-axis left
-                    Z = zeros(numel(angle),1);  % Assume tags are in same plane as the camera
-                    X = +dist.*cos(angle);      % x-axis forward
-                    ROT = Z;                    % Assume tags are oriented upright 
-                    
-                    % Add the translator function call to output data
-                    if isempty(angle)   % No beacons detected
-                        fcn_called= '[]= RealSenseTag';
-                    else                % Only output first beacon found
-                        fcn_called= sprintf(['[%.3f %.3f %.3f %.3f %.3f]'...
-                            ' = RealSenseTag'],X(1),Y(1),Z(1),ROT(1),Ntag(1));
-                    end
-                    
-                    if obj.autoEnable  %only run this if in autonomous mode
-                        addFcnToOutput(obj,fcn_called)
-                    end
-                   
-                    dt = toc(request_time);
-                    
-                    % Make output in realsense format
-                    tags = [dt*ones(length(Ntag),1) Ntag X Y ROT];
-                    
-                catch me
-                    if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
-                        disp('Simulator:unknownError')
-                        disp('Error in function RealSenseTag.')
-                    end
-                    rethrow(me)
+                Y = dist.*sin(angle);       % y-axis left
+                Z = zeros(numel(angle),1);  % Assume tags are in same plane as the camera
+                X = +dist.*cos(angle);      % x-axis forward
+                ROT = Z;                    % Assume tags are oriented upright 
+                
+                % Add the translator function call to output data
+                if isempty(angle)   % No beacons detected
+                    fcn_called= '[]= RealSenseTag';
+                else                % Only output first beacon found
+                    fcn_called= sprintf(['[%.3f %.3f %.3f %.3f %.3f]'...
+                        ' = RealSenseTag'],X(1),Y(1),Z(1),ROT(1),Ntag(1));
                 end
+
+                if obj.autoEnable %only run this in autonomous mode
+                    addFcnToOutput(obj,fcn_called)
+                end
+                
+                dt = toc(request_time);
+                
+                % Make output in realsense format
+                tags = [dt*ones(length(Ntag),1) Ntag X Y ROT];
+                
+            catch me
+                if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
+                    disp('Simulator:unknownError')
+                    disp('Error in function RealSenseTag.')
+                end
+                rethrow(me)
             end
         end
         
-        function [angle dist color]= CameraSensorCreate(obj)
-        % [angle dist color] = CameraSensorCreate(obj)
+        function [angle, dist, color]= CameraSensorCreate(obj,map)
+        % [angle dist color] = CameraSensorCreate(obj,map)
         % Reads the output from the blob detection on the camera,
         %   detects only beacons
         %
         % Input:
         % obj - Instance of class CreateRobot
+        % map - struct of map data from loadMap
         %
         % Output:
         % angle - Vector of doubles, each the angle relative to robot at 
@@ -3901,7 +4073,7 @@ classdef CreateRobot < handle
                     pause(obj.comDelay)
                     
                     % Generate reading for sensor
-                    [angle dist color]= genCamera(obj);
+                    [angle, dist, color]= genCamera(obj,map);
                     
                     % Add the translator function call to output data
                     if isempty(angle)   % No beacons detected
@@ -3911,7 +4083,7 @@ classdef CreateRobot < handle
                             '%.3f]]= CameraSensorCreate'],angle(1),...
                             dist(1),color(1,1),color(1,2),color(1,3));
                     end
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')
@@ -3923,7 +4095,7 @@ classdef CreateRobot < handle
             end
         end
         
-        function [x y angle]= OverheadLocalizationCreate(obj)
+        function [x, y, angle]= OverheadLocalizationCreate(obj)
         % [x y angle] = OverheadLocalizationCreate(obj)
         % Read the output of the overhead localization system
         %
@@ -3950,12 +4122,12 @@ classdef CreateRobot < handle
                     pause(obj.comDelay)
                     
                     % Generate reading for sensor
-                    [x y angle]= genOverhead(obj);
+                    [x, y, angle]= genOverhead(obj);
                     
                     % Add the translator function call to output data
                     fcn_called= sprintf(['[%.3f %.3f %.3f]]= '...
                         'OverheadLocalizationCreate'],x,y,angle);
-                    addFcnToOutput(obj,fcn_called)
+                    %addFcnToOutput(obj,fcn_called)
                     
                 catch me
                     if ~strcmp(me.identifier,'SIMULATOR:AutonomousDisabled')

@@ -1,5 +1,5 @@
 function [u, robotXYtraj, robotXYtrajNoisy, measurements] = simulateArc(robot_pose, goal_xy, maxWheelSpeed, ekfArgs)
-[V,omega,time] = findArcPath(robot_pose',goal_xy',maxWheelSpeed);
+[V,omega,time] = findArcPath(robot_pose,goal_xy,maxWheelSpeed);
 t = 0:ekfArgs.dt:time;
 u = [V*ones(1,length(t));omega*ones(1,length(t))];
 robotXYtraj = zeros(3,1+length(u));

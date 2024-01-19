@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<toolset id="user_apps_toolset" template="false">
+   <tool app_file_path="Apps/ReplayGUI_App.mlapp" handler_class="com.mathworks.deployment.desktop.toolstrip.ToolboxToolSetExtensionHandler" id="3279d515-3ff9-4036-a75d-ee4c6f3d2d48:Apps/ReplayGUI_App.mlapp" label="ReplayGUI_App" quick_access_eligible="false" toolset_id="user_apps_toolset">
+      <callback>ReplayGUI_App</callback>
+      <icon filename="matlab_app_generic_icon_24"/>
+      <icon filename="matlab_app_generic_icon_16"/>
+      <parent_tool id="my_apps" toolset_id="apps_toolset"/>
+   </tool>
+   <tool app_file_path="Apps/Simulator.mlapp" handler_class="com.mathworks.deployment.desktop.toolstrip.ToolboxToolSetExtensionHandler" id="3279d515-3ff9-4036-a75d-ee4c6f3d2d48:Apps/Simulator.mlapp" label="Simulator" quick_access_eligible="false" toolset_id="user_apps_toolset">
+      <callback>Simulator</callback>
+      <icon filename="matlab_app_generic_icon_24"/>
+      <icon filename="matlab_app_generic_icon_16"/>
+      <parent_tool id="my_apps" toolset_id="apps_toolset"/>
+   </tool>
+   <tool app_file_path="Apps/MapMakerGUI_App.mlapp" handler_class="com.mathworks.deployment.desktop.toolstrip.ToolboxToolSetExtensionHandler" id="3279d515-3ff9-4036-a75d-ee4c6f3d2d48:Apps/MapMakerGUI_App.mlapp" label="MapMakerGUI_App" quick_access_eligible="false" toolset_id="user_apps_toolset">
+      <callback>MapMakerGUI_App</callback>
+      <icon filename="matlab_app_generic_icon_24"/>
+      <icon filename="matlab_app_generic_icon_16"/>
+      <parent_tool id="my_apps" toolset_id="apps_toolset"/>
+   </tool>
+   <tool app_file_path="Apps/ConfigMakerGUI_App.mlapp" handler_class="com.mathworks.deployment.desktop.toolstrip.ToolboxToolSetExtensionHandler" id="3279d515-3ff9-4036-a75d-ee4c6f3d2d48:Apps/ConfigMakerGUI_App.mlapp" label="ConfigMakerGUI_App" quick_access_eligible="false" toolset_id="user_apps_toolset">
+      <callback>ConfigMakerGUI_App</callback>
+      <icon filename="matlab_app_generic_icon_24"/>
+      <icon filename="matlab_app_generic_icon_16"/>
+      <parent_tool id="my_apps" toolset_id="apps_toolset"/>
+   </tool>
+</toolset>
